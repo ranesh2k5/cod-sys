@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COD — Camouflage Detection System</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg0: #0a0c0e;
+  --bg1: #0f1318;
+  --bg2: #141a20;
+  --bg3: #1a2128;
+  --border: #1e2d22;
+  --border2: #2a3d30;
+  --green: #2dff6e;
+  --green2: #1db850;
+  --green3: #0d6630;
+  --amber: #f5a623;
+  --red: #ff3b3b;
+  --text: #c8d8c0;
+  --text2: #7a9a80;
+  --text3: #3d5440;
+  --mono: 'Share Tech Mono', monospace;
+  --sans: 'Rajdhani', sans-serif;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg0);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* scanline overlay */
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 2px,
+    rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px
+  );
+  pointer-events:none;
+  z-index:9999;
+}
+
+/* grid noise texture */
+body::after {
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(45,255,110,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45,255,110,0.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events:none;
+  z-index:1;
+}
+
+/* ── HEADER ── */
+header {
+  position:relative;
+  z-index:10;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  padding: 16px 32px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg1);
+}
+
+.logo {
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.logo-icon {
+  width:36px; height:36px;
+  border: 1.5px solid var(--green);
+  border-radius:4px;
+  display:flex; align-items:center; justify-content:center;
+  position:relative;
+  overflow:hidden;
+}
+
+.logo-icon::before {
+  content:'';
+  position:absolute;
+  inset:3px;
+  border: 1px solid var(--green3);
+  border-radius:2px;
+}
+
+.logo-icon svg { position:relative; z-index:1; }
+
+.logo-text {
+  font-family: var(--mono);
+  font-size:18px;
+  color: var(--green);
+  letter-spacing:3px;
+}
+
+.logo-sub {
+  font-family: var(--mono);
+  font-size:10px;
+  color: var(--text3);
+  letter-spacing:2px;
+  margin-top:2px;
+}
+
+.status-bar {
+  display:flex;
+  gap:24px;
+  font-family: var(--mono);
+  font-size:11px;
+}
+
+.stat {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-end;
+  gap:2px;
+}
+
+.stat-label { color: var(--text3); letter-spacing:1px; }
+.stat-value { color: var(--green); }
+
+.online-dot {
+  display:inline-block;
+  width:6px; height:6px;
+  background: var(--green);
+  border-radius:50%;
+  margin-right:6px;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,100%{ opacity:1; box-shadow:0 0 0 0 rgba(45,255,110,0.4); }
+  50%{ opacity:0.7; box-shadow:0 0 0 4px rgba(45,255,110,0); }
+}
+
+/* ── MAIN LAYOUT ── */
+main {
+  position:relative;
+  z-index:10;
+  display:grid;
+  grid-template-columns: 380px 1fr;
+  gap:0;
+  height: calc(100vh - 69px);
+}
+
+/* ── LEFT PANEL ── */
+.left-panel {
+  border-right: 1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+
+.panel-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--mono);
+  font-size:10px;
+  letter-spacing:2px;
+  color: var(--text3);
+  background: var(--bg1);
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.panel-header::before {
+  content:'';
+  width:3px; height:3px;
+  background: var(--green);
+  border-radius:50%;
+}
+
+/* ── UPLOAD ZONE ── */
+.upload-zone {
+  margin:20px;
+  border: 1.5px dashed var(--border2);
+  border-radius:8px;
+  padding:40px 20px;
+  text-align:center;
+  cursor:pointer;
+  transition: all 0.2s;
+  background: var(--bg1);
+  position:relative;
+  overflow:hidden;
+  flex-shrink:0;
+}
+
+.upload-zone::before {
+  content:'';
+  position:absolute;
+  inset:0;
+  background: radial-gradient(ellipse at center, rgba(45,255,110,0.03) 0%, transparent 70%);
+  pointer-events:none;
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--green);
+  background: rgba(45,255,110,0.03);
+}
+
+.upload-zone:hover .upload-icon { color: var(--green); }
+
+.upload-icon {
+  font-size:36px;
+  color: var(--text3);
+  margin-bottom:12px;
+  transition:color 0.2s;
+  display:block;
+}
+
+.upload-title {
+  font-family: var(--sans);
+  font-size:15px;
+  font-weight:600;
+  color: var(--text);
+  margin-bottom:4px;
+  letter-spacing:1px;
+}
+
+.upload-sub {
+  font-family: var(--mono);
+  font-size:10px;
+  color: var(--text3);
+  letter-spacing:1px;
+}
+
+#file-input { display:none; }
+
+/* ── CONTROLS ── */
+.controls {
+  padding:0 20px 20px;
+  flex-shrink:0;
+}
+
+.control-row {
+  margin-bottom:16px;
+}
+
+.control-label {
+  font-family: var(--mono);
+  font-size:10px;
+  color: var(--text3);
+  letter-spacing:2px;
+  margin-bottom:8px;
+  display:flex;
+  justify-content:space-between;
+}
+
+.control-label span { color: var(--green); }
+
+input[type=range] {
+  width:100%;
+  -webkit-appearance:none;
+  height:2px;
+  background: var(--bg3);
+  border-radius:1px;
+  outline:none;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none;
+  width:14px; height:14px;
+  background: var(--green);
+  border-radius:2px;
+  cursor:pointer;
+  box-shadow:0 0 8px rgba(45,255,110,0.5);
+}
+
+.mode-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+}
+
+.mode-btn {
+  padding:8px;
+  background:var(--bg2);
+  border:1px solid var(--border2);
+  border-radius:4px;
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:1px;
+  color:var(--text2);
+  cursor:pointer;
+  transition:all 0.15s;
+  text-align:center;
+}
+
+.mode-btn:hover { border-color:var(--green); color:var(--green); }
+.mode-btn.active {
+  background:rgba(45,255,110,0.08);
+  border-color:var(--green);
+  color:var(--green);
+}
+
+/* ── ANALYZE BUTTON ── */
+.analyze-btn {
+  width:100%;
+  padding:14px;
+  background: var(--green3);
+  border: 1px solid var(--green2);
+  border-radius:4px;
+  font-family:var(--mono);
+  font-size:13px;
+  letter-spacing:3px;
+  color:var(--green);
+  cursor:pointer;
+  transition:all 0.2s;
+  position:relative;
+  overflow:hidden;
+  margin-bottom:16px;
+}
+
+.analyze-btn:disabled {
+  opacity:0.4;
+  cursor:not-allowed;
+}
+
+.analyze-btn:not(:disabled):hover {
+  background:rgba(45,255,110,0.15);
+  box-shadow:0 0 20px rgba(45,255,110,0.2);
+}
+
+.analyze-btn .btn-glow {
+  position:absolute;
+  inset:0;
+  background:linear-gradient(90deg, transparent, rgba(45,255,110,0.15), transparent);
+  transform:translateX(-100%);
+  animation:none;
+}
+
+.analyze-btn.loading .btn-glow {
+  animation: sweep 1.2s ease-in-out infinite;
+}
+
+@keyframes sweep {
+  to { transform:translateX(100%); }
+}
+
+/* ── METRICS ── */
+.metrics {
+  padding:0 20px;
+  display:grid;
+  grid-template-columns:1fr 1fr 1fr;
+  gap:8px;
+  flex-shrink:0;
+}
+
+.metric-card {
+  background:var(--bg2);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:10px;
+  text-align:center;
+}
+
+.metric-val {
+  font-family:var(--mono);
+  font-size:16px;
+  color:var(--green);
+  display:block;
+  margin-bottom:2px;
+}
+
+.metric-val.warn { color:var(--amber); }
+
+.metric-key {
+  font-family:var(--mono);
+  font-size:9px;
+  color:var(--text3);
+  letter-spacing:1px;
+}
+
+/* ── LOG ── */
+.log {
+  flex:1;
+  margin:16px 20px 20px;
+  background:var(--bg1);
+  border:1px solid var(--border);
+  border-radius:6px;
+  padding:12px;
+  overflow-y:auto;
+  font-family:var(--mono);
+  font-size:10px;
+  color:var(--text3);
+  line-height:1.8;
+  min-height:0;
+}
+
+.log-entry { display:flex; gap:8px; }
+.log-time { color:var(--text3); flex-shrink:0; }
+.log-msg  { color:var(--text2); }
+.log-msg.ok  { color:var(--green); }
+.log-msg.err { color:var(--red); }
+.log-msg.info{ color:var(--amber); }
+
+/* ── RIGHT PANEL ── */
+.right-panel {
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  background:var(--bg0);
+}
+
+/* ── RESULTS GRID ── */
+.results-grid {
+  flex:1;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  grid-template-rows:1fr 1fr;
+  gap:1px;
+  background:var(--border);
+  overflow:hidden;
+  min-height:0;
+}
+
+.result-cell {
+  background:var(--bg0);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+  position:relative;
+}
+
+.cell-label {
+  position:absolute;
+  top:10px; left:10px;
+  font-family:var(--mono);
+  font-size:9px;
+  letter-spacing:2px;
+  color:var(--text3);
+  background:rgba(10,12,14,0.85);
+  padding:3px 8px;
+  border-radius:2px;
+  border:1px solid var(--border);
+  z-index:2;
+  pointer-events:none;
+}
+
+.cell-label.active { color:var(--green); border-color:var(--green3); }
+
+.result-img {
+  flex:1;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  min-height:0;
+}
+
+.result-img img {
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  display:block;
+}
+
+.placeholder {
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  height:100%;
+  color:var(--text3);
+}
+
+.placeholder-icon { font-size:28px; opacity:0.3; }
+
+.placeholder-text {
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:2px;
+  opacity:0.5;
+}
+
+/* ── BOTTOM BAR ── */
+.bottom-bar {
+  border-top:1px solid var(--border);
+  padding:10px 20px;
+  display:flex;
+  align-items:center;
+  gap:24px;
+  background:var(--bg1);
+  font-family:var(--mono);
+  font-size:10px;
+  color:var(--text3);
+  flex-shrink:0;
+}
+
+.bottom-bar span { letter-spacing:1px; }
+.bottom-bar .val { color:var(--text2); margin-left:4px; }
+
+/* ── COVERAGE BAR ── */
+.coverage-bar {
+  padding:12px 20px;
+  border-top:1px solid var(--border);
+  background:var(--bg1);
+  flex-shrink:0;
+}
+
+.coverage-track {
+  height:3px;
+  background:var(--bg3);
+  border-radius:2px;
+  overflow:hidden;
+  margin-top:6px;
+}
+
+.coverage-fill {
+  height:100%;
+  background:var(--green);
+  border-radius:2px;
+  width:0%;
+  transition:width 0.8s cubic-bezier(0.23,1,0.32,1);
+  box-shadow:0 0 8px rgba(45,255,110,0.5);
+}
+
+.coverage-label {
+  font-family:var(--mono);
+  font-size:9px;
+  color:var(--text3);
+  letter-spacing:2px;
+  display:flex;
+  justify-content:space-between;
+}
+
+.coverage-label .cov-val { color:var(--green); }
+
+/* ── LOADING OVERLAY ── */
+#loading-overlay {
+  display:none;
+  position:absolute;
+  inset:0;
+  background:rgba(10,12,14,0.92);
+  z-index:100;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:16px;
+}
+
+#loading-overlay.visible { display:flex; }
+
+.spinner {
+  width:40px; height:40px;
+  border:2px solid var(--bg3);
+  border-top:2px solid var(--green);
+  border-radius:50%;
+  animation:spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform:rotate(360deg); } }
+
+.loading-text {
+  font-family:var(--mono);
+  font-size:11px;
+  color:var(--green);
+  letter-spacing:3px;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <circle cx="9" cy="9" r="3" stroke="#2dff6e" stroke-width="1.2"/>
+        <circle cx="9" cy="9" r="6" stroke="#2dff6e" stroke-width="0.6" stroke-dasharray="2 2"/>
+        <line x1="9" y1="1" x2="9" y2="4" stroke="#2dff6e" stroke-width="1"/>
+        <line x1="9" y1="14" x2="9" y2="17" stroke="#2dff6e" stroke-width="1"/>
+        <line x1="1" y1="9" x2="4" y2="9" stroke="#2dff6e" stroke-width="1"/>
+        <line x1="14" y1="9" x2="17" y2="9" stroke="#2dff6e" stroke-width="1"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-text">COD·SYS</div>
+      <div class="logo-sub">CAMOUFLAGE DETECTION v1.0</div>
+    </div>
+  </div>
+
+  <div class="status-bar" id="status-bar">
+    <div class="stat">
+      <span class="stat-label">STATUS</span>
+      <span class="stat-value"><span class="online-dot"></span>ONLINE</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">MODEL</span>
+      <span class="stat-value" id="hdr-model">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">DEVICE</span>
+      <span class="stat-value" id="hdr-device">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">MODEL IoU</span>
+      <span class="stat-value" id="hdr-iou">—</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── LEFT PANEL ── -->
+  <div class="left-panel">
+
+    <div class="panel-header">INPUT · CONTROLS</div>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="upload-zone">
+      <span class="upload-icon">⊕</span>
+      <div class="upload-title">DROP IMAGE HERE</div>
+      <div class="upload-sub">OR CLICK TO SELECT · JPG / PNG / WEBP</div>
+      <input type="file" id="file-input" accept="image/*">
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+
+      <div class="control-row">
+        <div class="control-label">
+          DETECTION THRESHOLD
+          <span id="thresh-val">0.50</span>
+        </div>
+        <input type="range" id="threshold" min="0.1" max="0.9" step="0.01" value="0.5"
+               oninput="document.getElementById('thresh-val').textContent=parseFloat(this.value).toFixed(2)">
+      </div>
+
+      <div class="control-row">
+        <div class="control-label">VIEW MODE</div>
+        <div class="mode-grid">
+          <button class="mode-btn active" data-mode="overlay" onclick="setMode(this)">OVERLAY</button>
+          <button class="mode-btn" data-mode="mask" onclick="setMode(this)">MASK</button>
+          <button class="mode-btn" data-mode="heatmap" onclick="setMode(this)">HEATMAP</button>
+          <button class="mode-btn" data-mode="original" onclick="setMode(this)">ORIGINAL</button>
+        </div>
+      </div>
+
+      <button class="analyze-btn" id="analyze-btn" disabled onclick="runAnalysis()">
+        <span class="btn-glow"></span>
+        ⬡ ANALYZE
+      </button>
+
+    </div>
+
+    <!-- Metrics -->
+    <div class="metrics">
+      <div class="metric-card">
+        <span class="metric-val" id="m-coverage">—</span>
+        <span class="metric-key">COVERAGE %</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-val" id="m-time">—</span>
+        <span class="metric-key">INFER MS</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-val" id="m-iou">—</span>
+        <span class="metric-key">MODEL IoU</span>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log" id="log"></div>
+
+  </div>
+
+  <!-- ── RIGHT PANEL ── -->
+  <div class="right-panel">
+
+    <div class="panel-header">ANALYSIS OUTPUT</div>
+
+    <div class="results-grid" id="results-grid">
+      <div class="result-cell" id="cell-overlay">
+        <div class="cell-label active">OVERLAY</div>
+        <div class="result-img" id="img-overlay">
+          <div class="placeholder">
+            <div class="placeholder-icon">⊡</div>
+            <div class="placeholder-text">AWAITING INPUT</div>
+          </div>
+        </div>
+      </div>
+      <div class="result-cell" id="cell-heatmap">
+        <div class="cell-label">CONFIDENCE HEATMAP</div>
+        <div class="result-img" id="img-heatmap">
+          <div class="placeholder">
+            <div class="placeholder-icon">⊡</div>
+            <div class="placeholder-text">AWAITING INPUT</div>
+          </div>
+        </div>
+      </div>
+      <div class="result-cell" id="cell-mask">
+        <div class="cell-label">BINARY MASK</div>
+        <div class="result-img" id="img-mask">
+          <div class="placeholder">
+            <div class="placeholder-icon">⊡</div>
+            <div class="placeholder-text">AWAITING INPUT</div>
+          </div>
+        </div>
+      </div>
+      <div class="result-cell" id="cell-original">
+        <div class="cell-label">ORIGINAL</div>
+        <div class="result-img" id="img-original">
+          <div class="placeholder">
+            <div class="placeholder-icon">⊡</div>
+            <div class="placeholder-text">AWAITING INPUT</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Coverage bar -->
+    <div class="coverage-bar">
+      <div class="coverage-label">
+        <span>OBJECT COVERAGE</span>
+        <span class="cov-val" id="cov-val">0.00%</span>
+      </div>
+      <div class="coverage-track">
+        <div class="coverage-fill" id="coverage-fill"></div>
+      </div>
+    </div>
+
+    <!-- Bottom bar -->
+    <div class="bottom-bar">
+      <span>FILE <span class="val" id="bot-file">—</span></span>
+      <span>DIMS <span class="val" id="bot-dims">—</span></span>
+      <span>THRESHOLD <span class="val" id="bot-thresh">—</span></span>
+      <span>DEVICE <span class="val" id="bot-device">—</span></span>
+    </div>
+
+    <!-- Loading overlay (inside right panel) -->
+    <div id="loading-overlay">
+      <div class="spinner"></div>
+      <div class="loading-text">ANALYZING...</div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+const API = 'http://localhost:5000';
+let currentFile = null;
+let currentMode = 'overlay';
+let lastResult  = null;
+
+// ── Init ──────────────────────────────────────────────────────────────────
+async function init() {
+  try {
+    const r = await fetch(`${API}/status`);
+    const d = await r.json();
+    document.getElementById('hdr-model').textContent  = 'EfficientNet-B4';
+    document.getElementById('hdr-device').textContent = d.device.toUpperCase();
+    document.getElementById('hdr-iou').textContent    = d.iou;
+    document.getElementById('m-iou').textContent      = d.iou;
+    log('System online · device: ' + d.device + ' · IoU: ' + d.iou, 'ok');
+    log('Epoch ' + d.epoch + ' checkpoint loaded', 'info');
+  } catch(e) {
+    log('Cannot reach backend — is app.py running?', 'err');
+  }
+}
+
+// ── Upload zone ───────────────────────────────────────────────────────────
+const zone  = document.getElementById('upload-zone');
+const input = document.getElementById('file-input');
+
+zone.addEventListener('click', () => input.click());
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+zone.addEventListener('drop', e => {
+  e.preventDefault();
+  zone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+input.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+function loadFile(file) {
+  currentFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      setCell('img-original', e.target.result);
+      document.getElementById('bot-file').textContent = file.name;
+      document.getElementById('bot-dims').textContent = img.width + '×' + img.height;
+      document.getElementById('analyze-btn').disabled = false;
+      log('Image loaded: ' + file.name + ' (' + img.width + '×' + img.height + ')', 'info');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ── Analysis ──────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  if (!currentFile) return;
+
+  const btn = document.getElementById('analyze-btn');
+  btn.disabled = true;
+  btn.classList.add('loading');
+  document.getElementById('loading-overlay').classList.add('visible');
+  log('Running inference...', 'info');
+
+  const form = new FormData();
+  form.append('image', currentFile);
+  form.append('threshold', document.getElementById('threshold').value);
+
+  try {
+    const r = await fetch(`${API}/predict`, { method:'POST', body:form });
+    const d = await r.json();
+
+    if (d.error) { log('Error: ' + d.error, 'err'); return; }
+
+    lastResult = d;
+    updateResults(d);
+    log('Complete · ' + d.inference_ms + 'ms · coverage ' + d.coverage + '%', 'ok');
+
+  } catch(e) {
+    log('Request failed: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('loading');
+    document.getElementById('loading-overlay').classList.remove('visible');
+  }
+}
+
+function updateResults(d) {
+  setCell('img-overlay',  'data:image/jpeg;base64,' + d.overlay);
+  setCell('img-heatmap',  'data:image/jpeg;base64,' + d.heatmap);
+  setCell('img-mask',     'data:image/jpeg;base64,' + d.mask);
+  setCell('img-original', 'data:image/jpeg;base64,' + d.original);
+
+  document.getElementById('m-coverage').textContent = d.coverage.toFixed(1) + '%';
+  document.getElementById('m-time').textContent     = d.inference_ms + 'ms';
+  document.getElementById('m-iou').textContent      = d.model_iou;
+
+  const covFill = document.getElementById('coverage-fill');
+  covFill.style.width = Math.min(d.coverage, 100) + '%';
+  document.getElementById('cov-val').textContent = d.coverage.toFixed(2) + '%';
+
+  document.getElementById('bot-thresh').textContent = d.threshold;
+  document.getElementById('bot-device').textContent = d.device.toUpperCase();
+
+  // Color coverage warning
+  const mc = document.getElementById('m-coverage');
+  mc.className = d.coverage > 50 ? 'metric-val warn' : 'metric-val';
+}
+
+function setCell(id, src) {
+  const el  = document.getElementById(id);
+  const img = document.createElement('img');
+  img.src   = src;
+  el.innerHTML = '';
+  el.appendChild(img);
+}
+
+// ── Mode ──────────────────────────────────────────────────────────────────
+function setMode(btn) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentMode = btn.dataset.mode;
+}
+
+// ── Log ───────────────────────────────────────────────────────────────────
+function log(msg, type='') {
+  const el = document.getElementById('log');
+  const now = new Date();
+  const ts  = now.toTimeString().slice(0,8);
+  const entry = document.createElement('div');
+  entry.className = 'log-entry';
+  entry.innerHTML = `<span class="log-time">${ts}</span><span class="log-msg ${type}">${msg}</span>`;
+  el.appendChild(entry);
+  el.scrollTop = el.scrollHeight;
+}
+
+init();
+</script>
+</body>
+</html>
