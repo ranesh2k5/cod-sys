@@ -1,0 +1,5 @@
+cod10k/
+*.pth
+__pycache__/
+.DS_Store
+.results/
