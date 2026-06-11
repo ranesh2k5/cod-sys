@@ -1,5 +1,6 @@
 cod10k/
 *.pth
+checkpoints/
 __pycache__/
 .DS_Store
-.results/
+results/
